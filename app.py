@@ -89,6 +89,7 @@ if uploaded_file is not None:
             if st.button("Detect Disease", type="primary", use_container_width=True):
                 try:
                     with st.spinner("Analyzing the leaf..."):
+                        st.session_state.pop("audio_result", None)
                         result = predict_image(image, threshold=threshold)
                         info = load_disease_info(result["label"])
                         st.session_state["prediction"] = result
@@ -148,9 +149,13 @@ if uploaded_file is not None:
                     st.write(info["treatment"])
 
                 if not low_confidence:
-                    audio_lang = "en"
-                    spoken_text = build_spoken_script(result, info)
-                    audio_result = speak(spoken_text, lang=audio_lang)
+                    if "audio_result" not in st.session_state:
+                        spoken_text = build_spoken_script(result, info)
+                        st.session_state["audio_result"] = speak(
+                            spoken_text,
+                            lang="en",
+                        )
+                    audio_result = st.session_state["audio_result"]
                     if audio_result["path"]:
                         st.subheader("Audio explanation")
                         st.audio(str(audio_result["path"]))
