@@ -18,7 +18,9 @@ LIBRARIES = [
     "gtts",
     "pyttsx3",
     "kaggle",
+    "kagglehub",
     "tqdm",
+    "pytest",
 ]
 
 

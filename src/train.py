@@ -21,9 +21,10 @@ from src.config import (
     OUTPUT_DIR,
 )
 from src.data_loader import build_datasets
+from src.disease_info import check_info_coverage, generate_disease_info
 
 
-def build_model(number_of_classes: int) -> tf.keras.Model:
+def build_model(number_of_classes: int) -> tuple[tf.keras.Model, tf.keras.Model]:
     """Build MobileNetV2 transfer-learning model."""
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(224, 224, 3),
@@ -105,6 +106,9 @@ def main() -> None:
     args = parser.parse_args()
 
     train_ds, valid_ds, class_names = build_datasets()
+    disease_info = generate_disease_info()
+    if set(disease_info) - {"_general_note"} != set(class_names):
+        raise ValueError("Disease information keys do not match model classes.")
     model, base_model = build_model(len(class_names))
     start = time.time()
 

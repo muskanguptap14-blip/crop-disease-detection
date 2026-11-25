@@ -54,10 +54,14 @@ def load_model_once():
     return _MODEL, _CLASS_NAMES
 
 
-def predict_image(image, threshold: float = CONFIDENCE_THRESHOLD) -> dict[str, Any]:
+def predict_image(
+    image,
+    threshold: float = CONFIDENCE_THRESHOLD,
+    model_bundle=None,
+) -> dict[str, Any]:
     """Return label, confidence, top three predictions, and healthy status."""
     validate_image(image)
-    model, class_names = load_model_once()
+    model, class_names = model_bundle or load_model_once()
     batch = preprocess_image(image)
     probabilities = model.predict(batch, verbose=0)[0]
 

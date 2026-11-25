@@ -1,6 +1,7 @@
 """Count dataset classes and save two beginner-friendly dataset plots."""
 
 import random
+import shutil
 import sys
 import json
 from pathlib import Path
@@ -13,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DATA_DIR, OUTPUT_DIR, SEED
+from src.config import CLASS_NAMES_PATH, DATA_DIR, OUTPUT_DIR, SEED
 from src.download_data import find_dataset_split
 
 
@@ -41,7 +42,7 @@ def find_class_folders() -> tuple[list[Path], str]:
             split = Path(saved_split)
             folders = sorted(
                 [path for path in split.iterdir() if path.is_dir()],
-                key=lambda path: path.name.lower(),
+                key=lambda path: path.name,
             )
             if folders:
                 return folders, split.name
@@ -51,7 +52,7 @@ def find_class_folders() -> tuple[list[Path], str]:
         if split:
             folders = sorted(
                 [path for path in split.iterdir() if path.is_dir()],
-                key=lambda path: path.name.lower(),
+                key=lambda path: path.name,
             )
             if folders:
                 return folders, split.name
@@ -60,7 +61,7 @@ def find_class_folders() -> tuple[list[Path], str]:
     folders = (
         sorted(
             [path for path in DATA_DIR.iterdir() if path.is_dir()],
-            key=lambda path: path.name.lower(),
+            key=lambda path: path.name,
         )
         if DATA_DIR.is_dir()
         else []
@@ -136,6 +137,43 @@ def save_sample_grid(class_folders: list[Path]) -> Path:
     return output_path
 
 
+def copy_demo_samples() -> list[Path]:
+    """Copy up to three healthy and three diseased validation leaves."""
+    paths_file = DATA_DIR / "paths.json"
+    if not paths_file.is_file():
+        return []
+    dataset_paths = json.loads(paths_file.read_text(encoding="utf-8"))
+    valid_path = dataset_paths.get("valid")
+    if not valid_path:
+        return []
+
+    validation_dir = Path(valid_path)
+    class_folders = sorted(
+        (folder for folder in validation_dir.iterdir() if folder.is_dir()),
+        key=lambda folder: folder.name.lower(),
+    )
+    healthy_folders = [
+        folder for folder in class_folders if "healthy" in folder.name.lower()
+    ][:3]
+    diseased_folders = [
+        folder for folder in class_folders if "healthy" not in folder.name.lower()
+    ][:3]
+
+    sample_dir = DATA_DIR.parent / "sample_images"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for folder in healthy_folders + diseased_folders:
+        images = get_image_files(folder)
+        if not images:
+            continue
+        image = images[0]
+        destination = sample_dir / f"{folder.name}_{image.name}"
+        if not destination.exists():
+            shutil.copy2(image, destination)
+        copied.append(destination)
+    return copied
+
+
 def main() -> None:
     class_folders, split_label = find_class_folders()
     if not class_folders:
@@ -149,17 +187,25 @@ def main() -> None:
         folder.name: len(get_image_files(folder))
         for folder in class_folders
     }
+    CLASS_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CLASS_NAMES_PATH.write_text(
+        json.dumps(list(class_counts), indent=2),
+        encoding="utf-8",
+    )
 
     print(f"Dataset split inspected: {split_label}")
     print(f"Number of classes: {len(class_folders)}")
     print(f"Total images: {sum(class_counts.values())}")
+    print(f"Saved ordered class names: {CLASS_NAMES_PATH}")
     for class_name, count in class_counts.items():
         print(f"{class_name}: {count}")
 
     chart_path = save_distribution_chart(class_counts)
     grid_path = save_sample_grid(class_folders)
+    demo_samples = copy_demo_samples()
     print(f"Saved class chart: {chart_path}")
     print(f"Saved sample grid: {grid_path}")
+    print(f"Copied {len(demo_samples)} validation demo images.")
 
 
 if __name__ == "__main__":

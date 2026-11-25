@@ -20,7 +20,8 @@ def display_name_from_class(class_name: str) -> str:
 def generate_default_info(class_name: str) -> dict:
     """Create clear, safe generic information for a dataset class."""
     display_name = display_name_from_class(class_name)
-    crop = display_name.split()[0] if "_".strip() else "Crop"
+    crop_part = class_name.split("___", maxsplit=1)[0]
+    crop = crop_part.replace("_", " ").replace(",", "").strip().title()
     is_healthy = "healthy" in class_name.lower()
 
     return {
@@ -47,37 +48,23 @@ def generate_default_info(class_name: str) -> dict:
 
 
 def generate_disease_info() -> dict:
-    """Create disease_info.json for every saved class name."""
+    """Create both nine-language JSON resources from saved class names."""
     if not CLASS_NAMES_PATH.is_file():
-        raise FileNotFoundError("Run training or create models/class_names.json first.")
+        raise FileNotFoundError("Run python src/inspect_data.py first.")
     class_names = json.loads(CLASS_NAMES_PATH.read_text(encoding="utf-8"))
-    existing = {}
-    if DISEASE_INFO_PATH.is_file():
-        existing = json.loads(DISEASE_INFO_PATH.read_text(encoding="utf-8"))
+    from src.generate_localizations import generate_localization_files
 
-    result = {}
-    for class_name in class_names:
-        result[class_name] = existing.get(class_name, generate_default_info(class_name))
-
-    DISEASE_INFO_PATH.parent.mkdir(parents=True, exist_ok=True)
-    output = dict(result)
-    output["_general_note"] = (
-        "This app provides general educational guidance only. "
-        "Consult a local agriculture officer for diagnosis and treatment."
-    )
-    DISEASE_INFO_PATH.write_text(
-        json.dumps(output, indent=2),
-        encoding="utf-8",
-    )
-    return result
+    return generate_localization_files(class_names)
 
 
-def load_disease_info(class_name: str) -> dict:
-    """Return information for one class or a safe fallback."""
+def load_disease_info(class_name: str, language: str = "en") -> dict:
+    """Return localized information for one class or a safe fallback."""
     if not DISEASE_INFO_PATH.is_file():
         return generate_default_info(class_name)
     data = json.loads(DISEASE_INFO_PATH.read_text(encoding="utf-8"))
-    return data.get(class_name, generate_default_info(class_name))
+    entry = data.get(class_name, generate_default_info(class_name))
+    translations = entry.get("translations", {})
+    return translations.get(language, translations.get("en", entry))
 
 
 def check_info_coverage() -> bool:

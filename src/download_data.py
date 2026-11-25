@@ -1,11 +1,11 @@
 """Download the PlantVillage dataset or show manual-download instructions."""
 
-import shutil
-import subprocess
-import sys
 import json
 import os
+import sys
 from pathlib import Path
+
+import kagglehub
 
 # This makes direct commands such as "python src/download_data.py" work.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,20 +21,25 @@ PATHS_FILE = DATA_DIR / "paths.json"
 
 
 def find_dataset_split(data_dir: Path, split_name: str) -> Path | None:
-    """Find a nested train or valid folder regardless of unzip nesting."""
-    matches = [
-        path
-        for path in data_dir.rglob("*")
-        if path.is_dir()
-        and (
-            path.name.lower() == split_name.lower()
-            or path.name.lower() == "training"
-            or path.name.lower() == "validation"
-        )
-    ]
-    for path in matches:
-        if any(folder.is_dir() for folder in path.iterdir()):
-            return path
+    """Find a nested train or valid directory, including common aliases."""
+    split_names = {
+        "train": {"train", "training"},
+        "valid": {"valid", "validation", "val"},
+        "validation": {"valid", "validation", "val"},
+    }
+    acceptable_names = split_names.get(split_name.lower(), {split_name.lower()})
+    for current_dir, child_names, _ in os.walk(data_dir):
+        child_names.sort(key=str.casefold)
+        path = Path(current_dir)
+        if path.name.lower() not in acceptable_names:
+            continue
+        for class_name in child_names:
+            class_dir = path / class_name
+            if any(
+                item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS
+                for item in class_dir.iterdir()
+            ):
+                return path
     return None
 
 
@@ -63,17 +68,10 @@ def has_kaggle_credentials() -> bool:
 
 def dataset_is_ready(data_dir: Path) -> bool:
     """Check that at least one split contains class folders and images."""
-    for split_name in ("train", "valid", "validation"):
-        split = find_dataset_split(data_dir, split_name)
-        if split:
-            image_count = sum(
-                1
-                for path in split.rglob("*")
-                if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-            )
-            if image_count > 0:
-                return True
-    return False
+    return (
+        find_dataset_split(data_dir, "train") is not None
+        and find_dataset_split(data_dir, "valid") is not None
+    )
 
 
 def print_manual_steps() -> None:
@@ -90,45 +88,22 @@ def print_manual_steps() -> None:
     print("  3. Run this script again.")
 
 
-def download_with_kaggle() -> bool:
-    """Use the Kaggle command-line tool when kaggle.json is present."""
-    credential = find_kaggle_json()
-    if credential is None and not os.environ.get("KAGGLE_API_TOKEN") and not (
-        os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
-    ):
-        return False
-
+def download_with_kagglehub() -> Path:
+    """Download and extract the dataset directly into data/raw."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    kaggle_command = shutil.which("kaggle")
-    if kaggle_command is None:
-        venv_kaggle = ROOT / "venv" / "Scripts" / "kaggle.exe"
-        if venv_kaggle.is_file():
-            kaggle_command = str(venv_kaggle)
-    if kaggle_command is None:
-        print("Kaggle credentials were found, but the Kaggle command is unavailable.")
-        print("Run: python -m pip install kaggle")
-        return False
-
-    command = [
-        kaggle_command,
-        "datasets",
-        "download",
-        "-d",
+    print("PlantVillage is approximately 2.7 GB; download may take several minutes.")
+    dataset_path = kagglehub.dataset_download(
         DATASET,
-        "-p",
-        str(DATA_DIR),
-        "--unzip",
-    ]
-    print("Downloading PlantVillage through the Kaggle API...")
-    result = subprocess.run(command, cwd=ROOT)
-    return result.returncode == 0
+        output_dir=str(DATA_DIR),
+    )
+    return Path(dataset_path)
 
 
-def save_detected_paths() -> tuple[Path | None, Path | None]:
+def save_detected_paths(search_root: Path = DATA_DIR) -> tuple[Path | None, Path | None]:
     """Save detected train and valid directories for later scripts."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    train_dir = find_dataset_split(DATA_DIR, "train")
-    valid_dir = find_dataset_split(DATA_DIR, "valid")
+    train_dir = find_dataset_split(search_root, "train")
+    valid_dir = find_dataset_split(search_root, "valid")
     if valid_dir is None:
         valid_dir = find_dataset_split(DATA_DIR, "validation")
 
@@ -149,16 +124,30 @@ def main() -> None:
         print(f"Saved paths: {PATHS_FILE}")
         return
 
-    if has_kaggle_credentials():
-        if download_with_kaggle() and dataset_is_ready(DATA_DIR):
-            train_dir, valid_dir = save_detected_paths()
+    if not has_kaggle_credentials():
+        print_manual_steps()
+        return
+
+    try:
+        dataset_path = download_with_kagglehub()
+    except Exception as error:
+        raise RuntimeError(f"KaggleHub dataset download failed: {error}") from error
+
+    search_roots = [dataset_path, DATA_DIR]
+    for search_root in search_roots:
+        train_dir = find_dataset_split(search_root, "train")
+        valid_dir = find_dataset_split(search_root, "valid")
+        if train_dir and valid_dir:
+            train_dir, valid_dir = save_detected_paths(search_root)
             print("Download complete.")
-            print(f"Train folder: {train_dir or 'not found'}")
-            print(f"Valid folder: {valid_dir or 'not found'}")
+            print(f"Train folder: {train_dir}")
+            print(f"Valid folder: {valid_dir}")
             print(f"Saved paths: {PATHS_FILE}")
             return
 
-    print_manual_steps()
+    raise FileNotFoundError(
+        f"Download returned {dataset_path}, but train/valid folders were not detected."
+    )
 
 
 if __name__ == "__main__":

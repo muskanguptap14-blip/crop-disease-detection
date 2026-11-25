@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import tensorflow as tf
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -20,6 +19,7 @@ from src.config import (
     SEED,
     USE_SUBSET,
 )
+from src.preprocess import preprocess_image
 
 
 def load_split_paths() -> tuple[Path, Path]:
@@ -48,17 +48,30 @@ def make_train_subset(train_dir: Path) -> Path:
     for class_dir in sorted(folder for folder in train_dir.iterdir() if folder.is_dir()):
         target_dir = subset_dir / class_dir.name
         target_dir.mkdir(parents=True, exist_ok=True)
-        if any(target_dir.iterdir()):
+        existing_images = [
+            path
+            for path in target_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in image_extensions
+        ]
+        missing_count = MAX_IMAGES_PER_CLASS - len(existing_images)
+        if missing_count <= 0:
             continue
         images = [
             path for path in class_dir.rglob("*")
             if path.is_file() and path.suffix.lower() in image_extensions
         ]
         random.shuffle(images)
-        for source in images[:MAX_IMAGES_PER_CLASS]:
+        existing_names = {path.name for path in existing_images}
+        copied_count = 0
+        for source in images:
+            if source.name in existing_names:
+                continue
             target = target_dir / source.name
             if not target.exists():
                 target.write_bytes(source.read_bytes())
+                copied_count += 1
+            if copied_count >= missing_count:
+                break
     return subset_dir
 
 
@@ -101,10 +114,10 @@ def build_datasets():
 
     def prepare_train(image, label):
         image = augmentation(image)
-        return preprocess_input(image), label
+        return preprocess_image(image), label
 
     def prepare_valid(image, label):
-        return preprocess_input(image), label
+        return preprocess_image(image), label
 
     train_ds = (
         train_ds

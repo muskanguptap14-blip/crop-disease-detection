@@ -2,7 +2,6 @@
 
 import sys
 import uuid
-import warnings
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -12,13 +11,27 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import AUDIO_DIR
 
 
-def build_spoken_script(result: dict, info: dict) -> str:
-    """Create a short, friendly English or supported-language script."""
-    return (
-        f"The leaf appears to have {result['display_name']}. "
-        f"Confidence is {result['confidence'] * 100:.0f} percent. "
-        f"Symptoms are {info.get('symptoms', 'not available')}. "
-        f"Precautions are {info.get('precautions', 'not available')}."
+SCRIPT_TEMPLATES = {
+    "en": "The leaf may have {name}. Confidence is {confidence} percent. Symptoms: {symptoms}. Precautions: {precautions}.",
+    "kn": "ಎಲೆಗೆ {name} ರೋಗ ಇರುವ ಸಾಧ್ಯತೆ ಇದೆ. ವಿಶ್ವಾಸ {confidence} ಪ್ರತಿಶತ. ಲಕ್ಷಣಗಳು: {symptoms}. ಮುನ್ನೆಚ್ಚರಿಕೆಗಳು: {precautions}.",
+    "hi": "पत्ती में {name} रोग हो सकता है। विश्वास {confidence} प्रतिशत है। लक्षण: {symptoms}। सावधानियाँ: {precautions}।",
+    "ta": "இலையில் {name} நோய் இருக்கலாம். நம்பிக்கை {confidence} சதவீதம். அறிகுறிகள்: {symptoms}. முன்னெச்சரிக்கைகள்: {precautions}.",
+    "te": "ఆకులో {name} వ్యాధి ఉండవచ్చు. నమ్మకం {confidence} శాతం. లక్షణాలు: {symptoms}. జాగ్రత్తలు: {precautions}.",
+    "ml": "ഇലയിൽ {name} രോഗം ഉണ്ടാകാം. വിശ്വാസം {confidence} ശതമാനം. ലക്ഷണങ്ങൾ: {symptoms}. മുൻകരുതലുകൾ: {precautions}.",
+    "mr": "पानावर {name} रोग असू शकतो. विश्वास {confidence} टक्के. लक्षणे: {symptoms}. काळजी: {precautions}.",
+    "bn": "পাতায় {name} রোগ থাকতে পারে। বিশ্বাস {confidence} শতাংশ। লক্ষণ: {symptoms}। সতর্কতা: {precautions}।",
+    "gu": "પાનમાં {name} રોગ હોઈ શકે છે. વિશ્વાસ {confidence} ટકા. લક્ષણો: {symptoms}. સાવચેતીઓ: {precautions}.",
+}
+
+
+def build_spoken_script(result: dict, info: dict, lang: str = "en") -> str:
+    """Create a short spoken script in one of the supported languages."""
+    template = SCRIPT_TEMPLATES.get(lang, SCRIPT_TEMPLATES["en"])
+    return template.format(
+        name=info.get("display_name", result["display_name"]),
+        confidence=round(result["confidence"] * 100),
+        symptoms=info.get("symptoms", ""),
+        precautions=info.get("precautions", ""),
     )
 
 
@@ -27,8 +40,7 @@ def speak(text: str, lang: str = "en") -> dict:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"prediction_{uuid.uuid4().hex}"
 
-    if lang == "kn":
-        # Kannada support is prepared but needs reviewed translations.
+    if lang not in SCRIPT_TEMPLATES:
         lang = "en"
 
     try:
