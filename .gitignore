@@ -1,0 +1,9 @@
+venv/
+data/
+models/*.keras
+__pycache__/
+*.py[cod]
+.env
+kaggle.json
+outputs/
+.vscode/
