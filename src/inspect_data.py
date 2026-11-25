@@ -2,6 +2,7 @@
 
 import random
 import sys
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -32,6 +33,19 @@ def get_image_files(folder: Path) -> list[Path]:
 
 def find_class_folders() -> tuple[list[Path], str]:
     """Find train or valid class folders and return them with a label."""
+    paths_file = DATA_DIR / "paths.json"
+    if paths_file.is_file():
+        paths = json.loads(paths_file.read_text(encoding="utf-8"))
+        saved_split = paths.get("train")
+        if saved_split:
+            split = Path(saved_split)
+            folders = sorted(
+                [path for path in split.iterdir() if path.is_dir()],
+                key=lambda path: path.name.lower(),
+            )
+            if folders:
+                return folders, split.name
+
     for split_name in ("train", "valid", "validation"):
         split = find_dataset_split(DATA_DIR, split_name)
         if split:

@@ -3,6 +3,8 @@
 import shutil
 import subprocess
 import sys
+import json
+import os
 from pathlib import Path
 
 # This makes direct commands such as "python src/download_data.py" work.
@@ -15,6 +17,7 @@ from src.config import DATA_DIR, ROOT
 
 DATASET = "vipoooool/new-plant-diseases-dataset"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+PATHS_FILE = DATA_DIR / "paths.json"
 
 
 def find_dataset_split(data_dir: Path, split_name: str) -> Path | None:
@@ -45,6 +48,17 @@ def find_kaggle_json() -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def has_kaggle_credentials() -> bool:
+    """Return True if a Kaggle file or supported environment credential exists."""
+    if find_kaggle_json() is not None:
+        return True
+    if os.environ.get("KAGGLE_API_TOKEN"):
+        return True
+    if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
+        return True
+    return False
 
 
 def dataset_is_ready(data_dir: Path) -> bool:
@@ -79,13 +93,19 @@ def print_manual_steps() -> None:
 def download_with_kaggle() -> bool:
     """Use the Kaggle command-line tool when kaggle.json is present."""
     credential = find_kaggle_json()
-    if credential is None:
+    if credential is None and not os.environ.get("KAGGLE_API_TOKEN") and not (
+        os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY")
+    ):
         return False
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     kaggle_command = shutil.which("kaggle")
     if kaggle_command is None:
-        print("kaggle.json was found, but the Kaggle command is not on PATH.")
+        venv_kaggle = ROOT / "venv" / "Scripts" / "kaggle.exe"
+        if venv_kaggle.is_file():
+            kaggle_command = str(venv_kaggle)
+    if kaggle_command is None:
+        print("Kaggle credentials were found, but the Kaggle command is unavailable.")
         print("Run: python -m pip install kaggle")
         return False
 
@@ -104,20 +124,38 @@ def download_with_kaggle() -> bool:
     return result.returncode == 0
 
 
+def save_detected_paths() -> tuple[Path | None, Path | None]:
+    """Save detected train and valid directories for later scripts."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    train_dir = find_dataset_split(DATA_DIR, "train")
+    valid_dir = find_dataset_split(DATA_DIR, "valid")
+    if valid_dir is None:
+        valid_dir = find_dataset_split(DATA_DIR, "validation")
+
+    payload = {
+        "train": str(train_dir) if train_dir else None,
+        "valid": str(valid_dir) if valid_dir else None,
+    }
+    PATHS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return train_dir, valid_dir
+
+
 def main() -> None:
     if dataset_is_ready(DATA_DIR):
-        train_dir = find_dataset_split(DATA_DIR, "train")
-        valid_dir = find_dataset_split(DATA_DIR, "valid")
+        train_dir, valid_dir = save_detected_paths()
         print("Dataset is already downloaded.")
         print(f"Train folder: {train_dir or 'not found'}")
         print(f"Valid folder: {valid_dir or 'not found'}")
+        print(f"Saved paths: {PATHS_FILE}")
         return
 
-    if find_kaggle_json():
+    if has_kaggle_credentials():
         if download_with_kaggle() and dataset_is_ready(DATA_DIR):
+            train_dir, valid_dir = save_detected_paths()
             print("Download complete.")
-            print(f"Train folder: {find_dataset_split(DATA_DIR, 'train') or 'not found'}")
-            print(f"Valid folder: {find_dataset_split(DATA_DIR, 'valid') or 'not found'}")
+            print(f"Train folder: {train_dir or 'not found'}")
+            print(f"Valid folder: {valid_dir or 'not found'}")
+            print(f"Saved paths: {PATHS_FILE}")
             return
 
     print_manual_steps()
