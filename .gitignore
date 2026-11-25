@@ -1,9 +1,12 @@
 venv/
 data/
 models/*.keras
+outputs/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .env
 kaggle.json
-outputs/
+*.mp3
+*.wav
 .vscode/
